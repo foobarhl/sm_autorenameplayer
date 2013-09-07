@@ -1,4 +1,6 @@
 <?php
+// simple steam profile -> json retrieval script
+// [foo] bar <foobarhl@gmail.com>
 
 function steam32to64($steamid)
 {
@@ -14,23 +16,56 @@ function steam32to64($steamid)
 
 }
 
+function isValidSteamID($steamid)
+{
+ if(strlen(trim($steamid)) != 0)
+ {
+    $regex = "/^STEAM_0:[01]:[0-9]{7,8}$/";
+    if(!preg_match($regex, $steamid))
+    {
+      return(FALSE);
+    } else {
+     return(TRUE);
+    }
+ }
+   
+}
 
+function jsonRemoveUnicodeSequences($struct) {
+   return preg_replace("/\\\\u([a-f0-9]{4})/e", "iconv('UCS-4LE','UTF-8',pack('V', hexdec('U$1')))", json_encode($struct));
+}
+   
+    
 if(!isset($_REQUEST['s'])){
   exit;
 }
-$s=$_REQUEST['s'];
 
-$s64 = steam32to64($s);
+if(isset($_REQUEST['cx'])){ 
+ $cx = intval($_REQUEST['cx']);
+} else {
+ $cx=-1;
+}
+$steamID = $_REQUEST['s'];
+if(!isValidSteamID($steamID)){
+ exit;
+}
+
+$s64 = steam32to64($steamID);
 
 $url="http://steamcommunity.com/profiles/".$s64."/?xml=1";
 $xml=file_get_contents($url);
 $x=(array)simplexml_load_string($xml,null, LIBXML_NOCDATA);
-$dat['steamname'] = $x['steamID'];
-$dat['s32'] = $s;
-$dat['s64'] = $s64;
-$dat['_cx'] = (integer)$_REQUEST['cx'];
+if(!isset($x['steamID']) || $x['steamID']==""){
+  exit;
+}
 
-//$array = json_decode(json_encode((array)simplexml_load_string($xml)),1);
-header("Content-type: application/json");
+$str = preg_replace_callback('/\\\\u([0-9a-f]{4})/i', 'replace_unicode_escape_sequence', $x['steamID']);
+$dat['steamname'] = $str;
+$dat['s32'] = $steamID;
+$dat['s64'] = $s64;
+$dat['vacBanned'] = $x['vacBanned'];
+$dat['_cx'] = $cx;
+header("Content-type: application/json; charset=UTF-8");
 $x=json_encode($dat);
+$x = jsonRemoveUnicodeSequences($dat);
 echo $x;

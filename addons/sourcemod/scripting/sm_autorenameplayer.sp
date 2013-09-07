@@ -4,10 +4,14 @@
  *
  */
 
-/* Notes:
+/*
+ * Notes:
+ *  Needs some state to ensure overlapping requests don't happen
+ *  Needs a fall back if the player hasn't setup a community profile.  Propose: random name and/or kick
  *
- * Needs EasyHTTP from
- * Needs JSON decoder from https://forums.alliedmods.net/showpost.php?p=1914836&postcount=10 - other versions may not decode properly and will corrupt player names
+ * To build:
+ *  Needs EasyHTTP from https://github.com/PinionTech/Pinion-Adverts/blob/master/include/EasyHTTP.inc
+ *  Needs JSON decoder from https://forums.alliedmods.net/showpost.php?p=1914836&postcount=10 - other versions may not decode properly and will corrupt player names
  */
 
 #include <sourcemod>
@@ -20,7 +24,7 @@
 #include <smlib>
 #include <json>
 
-#define VERSION "0.92"
+#define VERSION "0.93"
 
 #define MAX_NAME_LEN 	32
 #define MAX_BAD_NAMES	10
@@ -89,12 +93,11 @@ checkClientName(client,force=0)	// default player names annoy foo bar
 	for(new i=0; i < sizeof(badNames); i++){
 
 		if(badNames[i][0]=='\0')
-			break;
-		PrintToServer("Check name '%s' = '%s'", badNames[i], playerName);
+			return;
 		if(StrContains(playerName, badNames[i], false) != -1 || playerName[0]=='\0'|| force){
 //			LogToGame("Initiating auto rename of player %s/%d/%s", playerName, client, steamId);
 			GetSteamData(client, steamId);
-			break;
+			return;
 		}
 	}
 	return;
@@ -138,7 +141,11 @@ public GetSteamData_Completed(any:userid, const String:sQueryData[], bool:succes
 			if(GetClientAuthString(clientId, testS32, sizeof(testS32))){
 				if(StrEqual(s32, testS32)){
 
-					SetClientInfo(clientId, "name", name);
+//					SetClientInfo(clientId, "name", name);	// doesn't save settings in client
+
+
+					ClientCommand(clientId, "name \"%s\"", name);
+
 					LogToGame("sm_autorenameplayer: Renamed client %d/%s to %s", clientId, s32, name);
 
 					decl String:playerMsg[100];
