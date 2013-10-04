@@ -24,10 +24,14 @@
 #include <smlib>
 #include <json>
 
-#define VERSION "0.93"
+#define VERSION "0.94"
 
 #define MAX_NAME_LEN 	32
 #define MAX_BAD_NAMES	10
+
+#define ACTION_CANTRENAME_NOTHING	0
+#define ACTION_CANTRENAME_SNARK		1
+#define ACTION_CANTRENAME_KICK		3
 
 public Plugin:myinfo = {
 	name = "Automatic Player Renamer",
@@ -41,8 +45,11 @@ new Handle:g_cVarRenameUnnamedPlayers = INVALID_HANDLE;
 new Handle:g_cVarPlayerInfoUrl = INVALID_HANDLE;
 new Handle:g_cVarPlayerRenamedMessage = INVALID_HANDLE;
 new Handle:g_cVarBadPlayerNames = INVALID_HANDLE;
+new Handle:g_cVarCantRenameAction = INVALID_HANDLE;
 
 new String:badNames[MAX_BAD_NAMES][MAX_NAME_LEN];
+
+new Bool:renameStatus[MAXPLAYERS+1];
 
 public OnPluginStart()
 {
@@ -52,16 +59,22 @@ public OnPluginStart()
 	g_cVarPlayerInfoUrl = CreateConVar("sm_autorenameplayer_infourl", "http://halflife.sixofour.tk/api/steam.php?s={STEAM_ID}&cx={CLIENT_ID}");
 	g_cVarPlayerRenamedMessage = CreateConVar("sm_autorenameplayer_message", "Default player names are not allowed here.  Your player name has been set for you.", "Message to print to chat if a player is renamed");
 	g_cVarBadPlayerNames = CreateConVar("sm_autorenameplayer_badnames", "HL2CTF_Player,Player", "Comma seperated list of default player names to auto rename. " );
+	g_cVarCantRenameAction = CreateConVar("sm_autorenameplayer_cantrename_action", "1", "Action to take if player can't be renamed.  0 = nothing, 1 = set to something snarky, 2 = kick");
 
 	AutoExecConfig(true, "sm_autorenameplayer");
+	HookEvent("player_spawn", Event_PlayerSpawn);
+}
+
+public OnPluginEnd()
+{
+	UnhookEvent("player_spawn", Event_PlayerSpawn);
 }
 
 public OnConfigsExecuted()
 {
 	decl String:badPlayerNames[331];
-        if(GetConVarBool(g_cVarRenameUnnamedPlayers)==true){
-		HookEvent("player_spawn", Event_PlayerSpawn);
-	}
+
+
 	GetConVarString(g_cVarBadPlayerNames, badPlayerNames, sizeof(badPlayerNames));
 	ExplodeString(badPlayerNames, ",", badNames, MAX_BAD_NAMES, MAX_NAME_LEN);
 }
@@ -79,6 +92,10 @@ checkClientName(client,force=0)	// default player names annoy foo bar
 	if(IsFakeClient(client))
 		return;
 
+	if(renameStatus[client] == true){
+		PrintToServer("sm_autorenameplayer: Client %d is already being processed for a name", client );
+		return;
+	}
 	decl String:steamId[32];
 	if(GetClientAuthString(client, steamId, sizeof(steamId))==false){
 		PrintToServer("Couldn't get Client Auth String for %d!", client);
@@ -94,6 +111,7 @@ checkClientName(client,force=0)	// default player names annoy foo bar
 
 		if(badNames[i][0]=='\0')
 			return;
+
 		if(StrContains(playerName, badNames[i], false) != -1 || playerName[0]=='\0'|| force){
 //			LogToGame("Initiating auto rename of player %s/%d/%s", playerName, client, steamId);
 			GetSteamData(client, steamId);
@@ -114,12 +132,22 @@ GetSteamData(clientId,String:steamId32[])
 	ReplaceString(requestUrl, sizeof(requestUrl), "{STEAM_ID}", steamId32);
 	ReplaceString(requestUrl, sizeof(requestUrl), "{CLIENT_ID}", clientIds);
 
-	EasyHTTP(requestUrl, GetSteamData_Completed, clientId);
+	renameStatus[clientId] = true;
+
+	EasyHTTP(requestUrl, GetSteamData_Completed, GetClientUserId(clientId));
 }
 
 
-public GetSteamData_Completed(any:userid, const String:sQueryData[], bool:success, error)
+public GetSteamData_Completed(any:userId, const String:sQueryData[], bool:success, error)
 {
+	new clientId = GetClientOfUserId(userId);
+	if(clientId==0){
+		PrintToServer("Passed userID of %d didn't pair up to a client!", userId);
+		return;
+	}
+	PrintToServer("GetSteamData_Completed clientId=%d", clientId);
+	renameStatus[clientId] = false;
+
 	if(success==false) {
 		PrintToServer("GetSteamData_Completed was failure");
 		return;
@@ -130,11 +158,14 @@ public GetSteamData_Completed(any:userid, const String:sQueryData[], bool:succes
 	if(js!= JSON_INVALID){
 		new String:s32[50];
 		new String:name[50];
-		new clientId;
+		new jsonClientId;
 		json_get_string(js, "steamname", name, sizeof(name));
 		json_get_string(js, "s32", s32, sizeof(s32));
-		json_get_cell(js, "_cx", clientId);//string(js,"_cx", tmp, sizeof(tmp));
-
+		json_get_cell(js, "_cx", jsonClientId);//string(js,"_cx", tmp, sizeof(tmp));
+		if(jsonClientId != clientId){
+			PrintToServer("DEBUG:  Passed userId %d resolved to %d in GetSteamData_Completed but json CX was %d", userId, clientId, jsonClientId);
+			return;
+		}
 		decl String:testS32[20];
 
 		if(IsClientConnected(clientId)){
@@ -167,7 +198,21 @@ public GetSteamData_Completed(any:userid, const String:sQueryData[], bool:succes
 		}
 		
 	} else {
-		PrintToServer("sm_autorenameplayer: JSON Data was invalid!");
+		// we couldn't get a valid response from the profile api.  Do something to the client
+		switch (GetConVarInt(g_cVarCantRenameAction)) {
+			case(ACTION_CANTRENAME_NOTHING): {
+				PrintToServer("sm_autorenameplayer: JSON Data was invalid! No action taken on client");
+			}
+			case(ACTION_CANTRENAME_SNARK): {
+				ClientCommand(clientId, "name \"SET YOUR NAME IN OPTIONS\"");
+				PrintCenterText(clientId, "Please set your player name in the game options!");
+			}
+			case(ACTION_CANTRENAME_KICK): {
+				KickClient(clientId, "This server requires a valid player name to be set.  Please set in game options");
+			}
+			
+		}
+		
 	}
 }
 
