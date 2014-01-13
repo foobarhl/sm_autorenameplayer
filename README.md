@@ -3,6 +3,8 @@ sm_autorenameplayer
 
 Automatically rename "unnamed" players to use their Steam Profile name.
 
+For the latest release, compiled binary w/source, and support:  purchase Auto Rename Player from www.foo-games.com.  
+
 Configuration
 -------------
 
