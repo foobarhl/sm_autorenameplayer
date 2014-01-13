@@ -10,10 +10,14 @@ Configuration
 
 Configuration: cfg/sourcemod/sm_autorenameplayer.cfg
 
- sm_autorenameplayer_enabled    : Enabled or not
- sm_autorenameplayer_infourl    : URL to a script that returns player info in JSON format
- sm_autorenameplayer_message    : Message to print to player chat if renamed
- sm_autorenameplayer_badnames   : Comma seperated list of "default" names to initiate an auto rename on.  Don't include spaces.
+> sm_autorenameplayer_enabled    : Enabled or not
+
+> sm_autorenameplayer_infourl    : URL to a script that returns player info in JSON format
+
+> sm_autorenameplayer_message    : Message to print to player chat if renamed
+
+> sm_autorenameplayer_badnames   : Comma seperated list of "default" names to initiate an auto rename on.  Don't include spaces.
+
 
 
 Player information PHP script
